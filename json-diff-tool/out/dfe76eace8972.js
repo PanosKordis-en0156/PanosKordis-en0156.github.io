@@ -70,16 +70,26 @@
     , {}],
     4: [function(require, module, exports) {
         const sortingPaths = [
-            "type",
+            ["type", "guid"],
             "ids[0].guid"
         ];
 
         function hasComplexPath(pathToMatch, sourcePath) {
-            try {
-                var matches = eval('sourcePath.' + pathToMatch) !== undefined;
-                return matches;
-            } catch (e) {
-                return false;
+            if (!_.isArray(pathToMatch)) {
+                try {
+                    var matches = eval('sourcePath.' + pathToMatch) !== undefined;
+                    return matches;
+                } catch (e) {
+                    return false;
+                }
+            } else {
+                var booleans = [];
+                for (var thisPathToMatch of pathToMatch) {
+                    booleans.push(hasComplexPath(thisPathToMatch, sourcePath));
+                }
+                return !_.reduce(booleans, function (result, b) {
+                    return result || b;
+                }, false) ? false : booleans;
             }
         }
 
@@ -87,14 +97,24 @@
             if (_.isArray(o)) {
                 var deepSortedArray = [];
                 var sortByPath = null;
+                var doSorts = null;
                 var hasObjects = false;
                 for (var i = 0; i < o.length; i++) {
                     hasObjects |= _.isObject(o[i]);
                     deepSortedArray[i] = _.isObject(o[i]) ? sortObject(o[i]).value : o[i];
                     for (var sp of sortingPaths) {
-                        if (i === 0 && hasComplexPath(sp, deepSortedArray[i])) {
-                            sortByPath = sp;
-                            break;
+                        if (i === 0) {
+                            if (o.length === 10) {
+                                debugger;
+                            }
+                            var complexPathsExistenceFlags = hasComplexPath(sp, deepSortedArray[i]);
+                            if (_.isArray(complexPathsExistenceFlags)) {
+                                doSorts = complexPathsExistenceFlags;
+                            }
+                            if (complexPathsExistenceFlags !== false) {
+                                sortByPath = sp;
+                                break;
+                            }
                         }
                     }
                 }
@@ -103,23 +123,44 @@
                 }
                 return {
                     value: deepSortedArray,
-                    path: sortByPath
+                    path: sortByPath,
+                    doSorts: doSorts
                 };
             } else {
                 var so = {};
                 _.forEach(Object.keys(o).sort(), function (key) {
                     var oVal = o[key];
+                    if (key === 'claim-lines') {
+                        debugger;
+                    }
                     if (_.isArray(oVal) || _.isObject(oVal)) {
                         var sortingResult = sortObject(oVal);
                         if (_.isArray(sortingResult.value) && !_.isNull(sortingResult.path)) {
-                            oVal = _.sortBy(sortingResult.value, function (o) {
-                                try {
-                                    var oPathVal = eval("o." + sortingResult.path);
-                                    return oPathVal;
-                                } catch (e) {
-                                    return null;
-                                }
-                            });
+                            if (_.isArray(sortingResult.doSorts)) {
+                                oVal = _.sortBy(sortingResult.value, function(o) {
+                                    var sortingFormula = '';
+                                    for (var i = 0; i < sortingResult.path.length; i++) {
+                                        if (sortingResult.doSorts[i]) {
+                                            try {
+                                                var oPathVal = eval("o." + sortingResult.path[i]);
+                                                sortingFormula += oPathVal;
+                                            } catch (e) {
+                                                console.error("Problem sorting");
+                                            }
+                                        }
+                                    }
+                                    return sortingFormula;
+                                });
+                            } else {
+                                oVal = _.sortBy(sortingResult.value, function(o) {
+                                    try {
+                                        var oPathVal = eval("o." + sortingResult.path);
+                                        return oPathVal;
+                                    } catch (e) {
+                                        return null;
+                                    }
+                                });
+                            }
                         } else {
                             oVal = sortingResult.value;
                         }
